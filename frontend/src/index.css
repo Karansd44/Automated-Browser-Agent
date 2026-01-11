@@ -76,6 +76,75 @@ textarea:focus {
     border-color: #647eff;
 }
 
+/* Suggestions Dropdown */
+.suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, rgba(26, 26, 26, 0.98) 0%, rgba(13, 13, 13, 0.98) 100%);
+    border: 1px solid rgba(100, 126, 255, 0.3);
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(100, 126, 255, 0.1);
+    backdrop-filter: blur(10px);
+    animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.suggestion-item {
+    padding: 0.875rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: #ccc;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover {
+    background: linear-gradient(90deg, rgba(100, 126, 255, 0.15), rgba(66, 211, 146, 0.15));
+    color: #fff;
+    padding-left: 1.25rem;
+    border-left: 3px solid #647eff;
+}
+
+.suggestions-dropdown::-webkit-scrollbar {
+    width: 8px;
+}
+
+.suggestions-dropdown::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.suggestions-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(100, 126, 255, 0.5);
+    border-radius: 4px;
+}
+
+.suggestions-dropdown::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 126, 255, 0.7);
+}
+
 button {
     border-radius: 8px;
     border: 1px solid transparent;
@@ -135,8 +204,9 @@ button:disabled {
 .result-container h2 {
     margin-top: 0;
     color: #42d392;
-    font-size: 1.5em;
-    margin-bottom: 1.5rem;
+    font-size: 2em;
+    margin-bottom: 2rem;
+    font-weight: 700;
 }
 
 .result-section {
@@ -153,28 +223,160 @@ button:disabled {
 
 .result-section h3 {
     color: #647eff;
-    font-size: 1.1em;
-    margin-bottom: 0.75rem;
-    font-weight: 600;
+    font-size: 1.5em;
+    margin-bottom: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #647eff, #42d392);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .result-section p {
     color: #ccc;
     line-height: 1.6;
     margin: 0;
+    font-size: 1.05em;
 }
 
 .findings-content {
-    background-color: #0d0d0d;
-    padding: 1rem;
-    border-radius: 4px;
-    border-left: 3px solid #42d392;
+    background: linear-gradient(135deg, rgba(13, 13, 13, 0.6) 0%, rgba(26, 26, 26, 0.4) 100%);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid rgba(66, 211, 146, 0.2);
     color: #e0e0e0;
     line-height: 1.6;
-    white-space: pre-wrap;
+}
+
+/* Findings Grid Layout */
+.findings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin-top: 0.5rem;
+    animation: fadeInGrid 0.5s ease-out;
+}
+
+@keyframes fadeInGrid {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Individual Finding Card */
+.finding-card {
+    background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(13, 13, 13, 0.95) 100%);
+    border: 1px solid rgba(66, 211, 146, 0.15);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.finding-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #42d392, #647eff, #42d392);
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.finding-card:hover {
+    border-color: rgba(66, 211, 146, 0.5);
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 12px 30px rgba(66, 211, 146, 0.2), 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+.finding-card:hover::before {
+    opacity: 1;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+/* Finding Number Badge */
+.finding-number {
+    background: linear-gradient(135deg, #42d392, #2ecc71);
+    color: #0d0d0d;
+    font-weight: 700;
+    font-size: 1.2em;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(66, 211, 146, 0.3);
+}
+
+/* Finding Content */
+.finding-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.finding-title {
+    font-size: 1.05em;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
+
+.finding-details {
+    color: #aaa;
+    font-size: 0.95em;
+    line-height: 1.6;
     word-wrap: break-word;
-    font-family: 'Fira Code', monospace;
-    font-size: 0.9em;
+}
+
+/* Finding Link Styling */
+.finding-link {
+    color: #42d392;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+    word-break: break-all;
+}
+
+.finding-link:hover {
+    color: #5fe6a8;
+    border-bottom-color: #42d392;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .findings-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 pre {
