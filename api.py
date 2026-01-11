@@ -1,127 +1,129 @@
+import os
+import uvicorn
+import asyncio
+from contextlib import asynccontextmanager
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from browser_use import Agent, Browser, ChatBrowserUse
 from pydantic import BaseModel
-import asyncio
 
-app = FastAPI()
+# Browser Use imports
+from browser_use import Agent, Browser
+
+# LangChain imports (Standard for browser-use LLM integration)
+from langchain_openai import ChatOpenAI
+
+# --- GLOBAL STATE MANAGEMENT ---
+# We keep the browser instance alive globally to avoid the 3-5s startup time per request.
+browser_instance: Optional[Browser] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 1. Startup: Launch browser once
+    global browser_instance
+    print("🚀 Starting Global Browser Instance...")
+    browser_instance = Browser(
+        headless=True,
+        disable_images=True,  # CRITICAL: Makes browsing ~3x faster
+        # Add other browser configs if needed (e.g., proxy, user_agent)
+    )
+    yield
+    # 2. Shutdown: Close browser cleanly
+    print("🛑 Shutting down browser...")
+    if browser_instance:
+        await browser_instance.close()
+
+app = FastAPI(lifespan=lifespan)
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development, allow all origins
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --- REQUEST MODELS ---
 class RunAgentRequest(BaseModel):
-    task: str = "Open a news site, search for ‘AI’, and return the titles and URLs of the top 5 articles"
+    task: str
+    model: str = "gpt-4o-mini"  # Default to fast/cheap model
+    max_steps: int = 50          # Prevent infinite loops
 
-@app.post("/api/run-agent")
+class AgentResponse(BaseModel):
+    task: str
+    status: str
+    steps_taken: int
+    final_result: Optional[str]
+    model_used: str
+
+# --- ENDPOINT ---
+@app.post("/api/run-agent", response_model=AgentResponse)
 async def run_agent(request: RunAgentRequest):
+    if not browser_instance:
+        raise HTTPException(status_code=500, detail="Browser not initialized")
+
     try:
-        browser = Browser()
-        llm = ChatBrowserUse()
+        # 1. Configure LLM
+        # We use temperature=0 for deterministic, factual extraction
+        llm = ChatOpenAI(
+            model=request.model, 
+            temperature=0,
+            timeout=60,  # Timeout for LLM calls
+        )
         
+        # 2. Initialize Agent
+        # We pass the global browser instance. browser-use handles creating a new context/tab.
         agent = Agent(
             task=request.task,
             llm=llm,
-            browser=browser,
+            browser=browser_instance,
+            use_vision=True,  # Keep True for advanced understanding, set False for max speed
+            max_steps=request.max_steps
         )
         
-        history = await agent.run()
+        print(f"🤖 Starting task: {request.task[:50]}...")
         
-        # Extract meaningful information from history
-        result_data = {
-            "task": request.task,
-            "status": "completed",
-            "summary": None,
-            "actions": [],
-            "final_result": None
-        }
-        
-        # Parse history to extract key information
-        action_count = 0
-        final_answer = None
-        
-        # Check if history is iterable (list of actions)
-        try:
-            if hasattr(history, '__iter__') and not isinstance(history, str):
-                # Get the last item which should contain the final result
-                history_list = list(history)
-                action_count = len(history_list)
-                
-                # Look for the final result in the last action
-                if history_list:
-                    last_action = history_list[-1]
-                    
-                    # Try different attributes to get the final result
-                    if hasattr(last_action, 'result') and last_action.result:
-                        result_obj = last_action.result
-                        # Check if result has extracted_content or similar
-                        if hasattr(result_obj, 'extracted_content'):
-                            final_answer = str(result_obj.extracted_content)
-                        elif hasattr(result_obj, 'text'):
-                            final_answer = str(result_obj.text)
-                        elif hasattr(result_obj, 'content'):
-                            final_answer = str(result_obj.content)
-                        else:
-                            final_answer = str(result_obj)
-                    
-                    # Try model_output for the final answer
-                    if not final_answer and hasattr(last_action, 'model_output'):
-                        model_output = last_action.model_output
-                        if hasattr(model_output, 'current_state') and hasattr(model_output.current_state, 'output'):
-                            final_answer = str(model_output.current_state.output)
-                        elif hasattr(model_output, 'output'):
-                            final_answer = str(model_output.output)
-                    
-                    # Check for done action with final result
-                    if not final_answer and hasattr(last_action, 'action_name') and last_action.action_name == 'done':
-                        if hasattr(last_action, 'extracted_content'):
-                            final_answer = str(last_action.extracted_content)
-        except Exception as e:
-            print(f"Error extracting from history: {e}")
-        
-        # Set summary based on action count
-        if action_count > 0:
-            result_data["summary"] = f"Agent completed {action_count} step(s) successfully"
-        else:
-            result_data["summary"] = "Task execution completed"
-        
-        # Extract final result or meaningful output
-        if final_answer:
-            result_data["final_result"] = final_answer
-        elif hasattr(history, 'final_result'):
-            result_data["final_result"] = str(history.final_result())
-        elif hasattr(history, 'result'):
-            result_data["final_result"] = str(history.result())
-        else:
-            # Fallback: try to extract from history string
-            history_str = str(history)
-            # Look for patterns that indicate final results
-            if "extracted_content=" in history_str:
-                import re
-                match = re.search(r"extracted_content='([^']+)'", history_str)
-                if match:
-                    result_data["final_result"] = match.group(1)
-                else:
-                    match = re.search(r'extracted_content="([^"]+)"', history_str)
-                    if match:
-                        result_data["final_result"] = match.group(1)
+        final_result = None
+        steps = 0
+
+        # 3. Run Agent (Async Generator)
+        # The agent yields history items. We iterate until completion.
+        # We don't store all history in memory to save RAM, just track the last state.
+        async for step in agent.run():
+            steps += 1
+            # Optional: You could stream 'step' to the client via WebSockets here
             
-            # If still no result, use cleaned history
-            if not result_data["final_result"]:
-                cleaned = history_str.replace("AgentHistoryList", "")
-                cleaned = cleaned.replace("AgentHistory", "")
-                result_data["final_result"] = cleaned
+            # Advanced: Check the step for the final result content immediately
+            if hasattr(step, 'extracted_content') and step.extracted_content:
+                final_result = step.extracted_content
         
-        return result_data
-        
+        # Fallback: If extracted_content is missing, check the last step's model output
+        if not final_result:
+            # Sometimes the result is in the final 'Done' action
+            if hasattr(step, 'model_output') and step.model_output:
+                 mo = step.model_output
+                 if hasattr(mo, 'output') and mo.output:
+                     final_result = mo.output
+
+        # If still no result, provide a generic summary
+        if not final_result:
+            final_result = f"Task executed {steps} steps, but no specific content was extracted. Check logs."
+
+        print(f"✅ Task completed in {steps} steps.")
+
+        return AgentResponse(
+            task=request.task,
+            status="completed",
+            steps_taken=steps,
+            final_result=final_result,
+            model_used=request.model
+        )
+
     except Exception as e:
+        print(f"❌ Error during agent execution: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
